@@ -18,15 +18,27 @@ class _RuneCell {
 // GameScreen
 // ─────────────────────────────────────────────────────────────────────────────
 class GameScreen extends StatefulWidget {
-  const GameScreen({super.key, required this.phase});
-  final Phase phase;
+  /// Construtor para modo campanha (fase normal)
+  const GameScreen({super.key, required this.phase}) : infiniteMode = null;
+
+  /// Construtor para modo infinito
+  const GameScreen.infinite({
+    super.key,
+    required InfiniteMode this.infiniteMode,
+  }) : phase = null;
+
+  final Phase? phase;
+  final InfiniteMode? infiniteMode;
 
   @override
   State<GameScreen> createState() => _GameScreenState();
 }
 
 class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
-  late Phase _phase;
+  late Phase? _phase;
+  late InfiniteMode? _infiniteMode;
+
+  bool get _isInfinite => _infiniteMode != null;
 
   late List<List<_RuneCell>> _board;
   late List<List<double>> _fallOffset; // pixels de offset vertical por célula
@@ -37,18 +49,23 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   bool _isBusy = false;
   int _score = 0;
   int _bestCombo = 0;
-  int _movesLeft = 0;
+  int _movesLeft = 0; // campanha: movimentos restantes
+  int _movesUsed = 0; // infinito: movimentos realizados
   int _bestScore = 0;
   bool _gameOver = false;
   bool _victory = false;
+  bool _infiniteEnded = false; // infinito: jogador encerrou manualmente
 
   // Células em animação de clearance e seu tamanho de match (3, 4 ou 5+)
   Map<String, int> _clearingCells = {}; // key -> matchSize
   Set<String> _particleCells = {}; // células com partícula ativa
 
-  int get _rows => _phase.rows;
-  int get _cols => _phase.cols;
-  int get _runeTypes => _phase.runeTypes;
+  int get _rows => _isInfinite ? _infiniteMode!.rows : _phase!.rows;
+  int get _cols => _isInfinite ? _infiniteMode!.cols : _phase!.cols;
+  int get _runeTypes =>
+      _isInfinite ? _infiniteMode!.runeTypes : _phase!.runeTypes;
+  Color get _accentColor =>
+      _isInfinite ? _infiniteMode!.accentColor : _phase!.accentColor;
 
   final List<Color> _runeColors = const [
     Color(0xFF8B5CF6),
@@ -70,13 +87,19 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     _phase = widget.phase;
-    _movesLeft = _phase.moves;
+    _infiniteMode = widget.infiniteMode;
+    _movesLeft = _isInfinite ? 0 : _phase!.moves;
     _initBoard();
     _loadBestScore();
   }
 
   Future<void> _loadBestScore() async {
-    final best = await ScoreService.getBestScore(_phase.id);
+    final int best;
+    if (_isInfinite) {
+      best = await ScoreService.getInfiniteBestScore(_infiniteMode!.id);
+    } else {
+      best = await ScoreService.getBestScore(_phase!.id);
+    }
     if (mounted) setState(() => _bestScore = best);
   }
 
@@ -319,7 +342,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _attemptSwap(Point<int> a, Point<int> b) async {
-    if (_movesLeft <= 0) return;
+    if (!_isInfinite && _movesLeft <= 0) return;
     setState(() {
       _isBusy = true;
       _selected = null;
@@ -338,32 +361,55 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       return;
     }
 
-    setState(() => _movesLeft--);
+    if (!_isInfinite) setState(() => _movesLeft--);
     await _resolveBoard(0);
 
     if (!mounted) return;
-    await ScoreService.saveBestScore(_phase.id, _score);
-    final newBest = await ScoreService.getBestScore(_phase.id);
-
-    if (!mounted) return;
-    setState(() {
-      _bestScore = newBest;
-      _isBusy = false;
-    });
-
-    _checkEndConditions();
+    if (_isInfinite) {
+      setState(() => _movesUsed++);
+      await ScoreService.saveInfiniteBestScore(_infiniteMode!.id, _score);
+      final newBest = await ScoreService.getInfiniteBestScore(
+        _infiniteMode!.id,
+      );
+      if (!mounted) return;
+      setState(() {
+        _bestScore = newBest;
+        _isBusy = false;
+      });
+    } else {
+      await ScoreService.saveBestScore(_phase!.id, _score);
+      final newBest = await ScoreService.getBestScore(_phase!.id);
+      if (!mounted) return;
+      setState(() {
+        _bestScore = newBest;
+        _isBusy = false;
+      });
+      _checkEndConditions();
+    }
   }
 
   void _checkEndConditions() {
-    if (_score >= _phase.targetScore) {
+    if (_isInfinite) return;
+    if (_score >= _phase!.targetScore) {
       setState(() => _victory = true);
     } else if (_movesLeft <= 0) {
       setState(() => _gameOver = true);
     }
   }
 
+  /// Encerra o modo infinito manualmente (botão do jogador)
+  Future<void> _endInfiniteGame() async {
+    await ScoreService.saveInfiniteBestScore(_infiniteMode!.id, _score);
+    final newBest = await ScoreService.getInfiniteBestScore(_infiniteMode!.id);
+    if (!mounted) return;
+    setState(() {
+      _bestScore = newBest;
+      _infiniteEnded = true;
+    });
+  }
+
   Future<void> _onTileTap(int row, int col) async {
-    if (_isBusy || _gameOver || _victory) return;
+    if (_isBusy || _gameOver || _victory || _infiniteEnded) return;
 
     final tapped = Point(row, col);
 
@@ -389,9 +435,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     setState(() {
       _score = 0;
       _bestCombo = 0;
-      _movesLeft = _phase.moves;
+      _movesLeft = _isInfinite ? 0 : _phase!.moves;
+      _movesUsed = 0;
       _gameOver = false;
       _victory = false;
+      _infiniteEnded = false;
       _selected = null;
       _isBusy = false;
       _clearingCells = {};
@@ -443,6 +491,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                 ),
               ),
               if (_gameOver || _victory) _buildOverlay(),
+              if (_infiniteEnded) _buildInfiniteOverlay(),
             ],
           ),
         ),
@@ -451,6 +500,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildHeader() {
+    final title = _isInfinite ? _infiniteMode!.name : _phase!.name;
+    final subtitle = _isInfinite ? 'Modo Infinito' : 'Fase ${_phase!.id}';
     return Row(
       children: [
         IconButton(
@@ -463,7 +514,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                _phase.name,
+                title,
                 style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w800,
@@ -471,7 +522,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                 ),
               ),
               Text(
-                'Fase ${_phase.id}',
+                subtitle,
                 style: TextStyle(
                   color: Colors.white.withOpacity(0.5),
                   fontSize: 12,
@@ -480,17 +531,31 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
             ],
           ),
         ),
-        FilledButton.tonalIcon(
-          onPressed: _isBusy ? null : _restartGame,
-          icon: const Icon(Icons.refresh_rounded, size: 16),
-          label: const Text('Novo'),
-          style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
-        ),
+        if (_isInfinite)
+          FilledButton.tonalIcon(
+            onPressed: (_isBusy || _infiniteEnded) ? null : _endInfiniteGame,
+            icon: const Icon(Icons.flag_rounded, size: 16),
+            label: const Text('Encerrar'),
+            style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+          )
+        else
+          FilledButton.tonalIcon(
+            onPressed: _isBusy ? null : _restartGame,
+            icon: const Icon(Icons.refresh_rounded, size: 16),
+            label: const Text('Novo'),
+            style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+          ),
       ],
     );
   }
 
   Widget _buildStats() {
+    final movesValue = _isInfinite ? '$_movesUsed' : '$_movesLeft';
+    final movesLabel = _isInfinite ? 'Jogadas' : 'Movimentos';
+    final movesColor = _isInfinite
+        ? _accentColor
+        : (_movesLeft <= 5 ? const Color(0xFFEF4444) : const Color(0xFF06B6D4));
+
     return Row(
       children: [
         _StatChip(
@@ -508,12 +573,12 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         ),
         const SizedBox(width: 8),
         _StatChip(
-          icon: Icons.touch_app_rounded,
-          label: 'Movimentos',
-          value: '$_movesLeft',
-          color: _movesLeft <= 5
-              ? const Color(0xFFEF4444)
-              : const Color(0xFF06B6D4),
+          icon: _isInfinite
+              ? Icons.all_inclusive_rounded
+              : Icons.touch_app_rounded,
+          label: movesLabel,
+          value: movesValue,
+          color: movesColor,
         ),
         const SizedBox(width: 8),
         _StatChip(
@@ -527,7 +592,10 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildProgressBar() {
-    final progress = (_score / _phase.targetScore).clamp(0.0, 1.0);
+    // No modo infinito não existe barra de progresso de meta
+    if (_isInfinite) return const SizedBox.shrink();
+
+    final progress = (_score / _phase!.targetScore).clamp(0.0, 1.0);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -535,7 +603,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              'Meta: ${_phase.targetScore} pts',
+              'Meta: ${_phase!.targetScore} pts',
               style: TextStyle(
                 fontSize: 11,
                 color: Colors.white.withOpacity(0.5),
@@ -545,7 +613,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
               '${(progress * 100).toStringAsFixed(0)}%',
               style: TextStyle(
                 fontSize: 11,
-                color: _phase.accentColor,
+                color: _phase!.accentColor,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -561,7 +629,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
               value: val,
               minHeight: 8,
               backgroundColor: Colors.white.withOpacity(0.08),
-              valueColor: AlwaysStoppedAnimation<Color>(_phase.accentColor),
+              valueColor: AlwaysStoppedAnimation<Color>(_phase!.accentColor),
             ),
           ),
         ),
@@ -770,7 +838,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   Widget _buildStatusText() {
     String text;
-    if (_victory) {
+    if (_infiniteEnded) {
+      text = '✦ Jogo encerrado! Veja sua pontuação final.';
+    } else if (_victory) {
       text = '✦ Vitória! Runas dominadas!';
     } else if (_gameOver) {
       text = '☽ Movimentos esgotados. Tente novamente!';
@@ -848,6 +918,117 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.6),
                     fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                _ScoreRow(label: 'Pontuação', value: '$_score', color: color),
+                const SizedBox(height: 6),
+                _ScoreRow(
+                  label: 'Recorde',
+                  value: '$_bestScore',
+                  color: const Color(0xFF10B981),
+                ),
+                if (_bestCombo > 1) ...[
+                  const SizedBox(height: 6),
+                  _ScoreRow(
+                    label: 'Melhor Combo',
+                    value: 'x$_bestCombo',
+                    color: const Color(0xFFF59E0B),
+                  ),
+                ],
+                const SizedBox(height: 28),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(
+                            color: Colors.white.withOpacity(0.2),
+                          ),
+                          foregroundColor: Colors.white70,
+                          minimumSize: const Size.fromHeight(48),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: const Text('Menu'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: _restartGame,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: color,
+                          minimumSize: const Size.fromHeight(48),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: const Text('Jogar Novamente'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfiniteOverlay() {
+    final color = _infiniteMode!.accentColor;
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black.withOpacity(0.72),
+        child: Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 32),
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F1020),
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(color: color.withOpacity(0.4), width: 1.5),
+              boxShadow: [
+                BoxShadow(color: color.withOpacity(0.2), blurRadius: 40),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                      _infiniteMode!.icon,
+                      style: TextStyle(
+                        fontSize: 52,
+                        color: color,
+                        shadows: [Shadow(color: color, blurRadius: 20)],
+                      ),
+                    )
+                    .animate(onPlay: (c) => c.repeat(reverse: true))
+                    .scale(
+                      begin: const Offset(0.9, 0.9),
+                      end: const Offset(1.1, 1.1),
+                      duration: 1200.ms,
+                    ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Sessão Encerrada',
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Você realizou $_movesUsed jogada${_movesUsed == 1 ? '' : 's'}.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.55),
+                    fontSize: 13,
                   ),
                 ),
                 const SizedBox(height: 20),

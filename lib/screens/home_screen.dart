@@ -17,6 +17,7 @@ class _HomeScreenState extends State<HomeScreen>
   late AnimationController _particleController;
   final List<_StarParticle> _stars = [];
   Map<int, int> _bestScores = {};
+  List<int> _infiniteBestScores = [];
 
   @override
   void initState() {
@@ -46,7 +47,15 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _loadScores() async {
     final scores = await ScoreService.getAllBestScores(kPhases.length);
-    if (mounted) setState(() => _bestScores = scores);
+    final infiniteScores = await ScoreService.getAllInfiniteBestScores(
+      kInfiniteModes.length,
+    );
+    if (mounted) {
+      setState(() {
+        _bestScores = scores;
+        _infiniteBestScores = infiniteScores;
+      });
+    }
   }
 
   void _openPhaseSelect() {
@@ -62,6 +71,30 @@ class _HomeScreenState extends State<HomeScreen>
             context,
             PageRouteBuilder(
               pageBuilder: (_, animation, __) => GameScreen(phase: phase),
+              transitionsBuilder: (_, animation, __, child) =>
+                  FadeTransition(opacity: animation, child: child),
+              transitionDuration: const Duration(milliseconds: 400),
+            ),
+          ).then((_) => _loadScores());
+        },
+      ),
+    );
+  }
+
+  void _openInfiniteSelect() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _InfiniteModeSheet(
+        bestScores: _infiniteBestScores,
+        onModeSelected: (mode) {
+          Navigator.pop(context);
+          Navigator.push(
+            context,
+            PageRouteBuilder(
+              pageBuilder: (_, animation, __) =>
+                  GameScreen.infinite(infiniteMode: mode),
               transitionsBuilder: (_, animation, __, child) =>
                   FadeTransition(opacity: animation, child: child),
               transitionDuration: const Duration(milliseconds: 400),
@@ -191,6 +224,38 @@ class _HomeScreenState extends State<HomeScreen>
                             )
                             .animate()
                             .fadeIn(delay: 600.ms, duration: 500.ms)
+                            .slideY(begin: 0.3, end: 0),
+                        const SizedBox(height: 12),
+                        FilledButton.tonal(
+                              onPressed: _openInfiniteSelect,
+                              style: FilledButton.styleFrom(
+                                minimumSize: const Size.fromHeight(52),
+                                backgroundColor: const Color(0xFF0F1020),
+                                foregroundColor: const Color(0xFF06B6D4),
+                                side: const BorderSide(
+                                  color: Color(0xFF06B6D4),
+                                  width: 1.4,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                ),
+                                textStyle: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1,
+                                ),
+                              ),
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.all_inclusive_rounded, size: 20),
+                                  SizedBox(width: 8),
+                                  Text('MODO INFINITO'),
+                                ],
+                              ),
+                            )
+                            .animate()
+                            .fadeIn(delay: 700.ms, duration: 500.ms)
                             .slideY(begin: 0.3, end: 0),
                         const SizedBox(height: 16),
                         OutlinedButton(
@@ -431,6 +496,194 @@ class _Tag extends StatelessWidget {
           fontSize: 10,
           color: color,
           fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Bottom Sheet de modo infinito ─────────────────────────────────────────
+class _InfiniteModeSheet extends StatelessWidget {
+  const _InfiniteModeSheet({
+    required this.bestScores,
+    required this.onModeSelected,
+  });
+
+  final List<int> bestScores;
+  final void Function(InfiniteMode) onModeSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.6,
+      minChildSize: 0.45,
+      maxChildSize: 0.85,
+      builder: (_, controller) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF0F1020),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 44,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Modo Infinito',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+                letterSpacing: 1,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Sem limite de movimentos. Pontue o máximo possível.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.white.withOpacity(0.45),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: ListView.separated(
+                controller: controller,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 4,
+                ),
+                itemCount: kInfiniteModes.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                itemBuilder: (context, i) {
+                  final mode = kInfiniteModes[i];
+                  final best = i < bestScores.length ? bestScores[i] : 0;
+                  return _InfiniteTile(
+                        mode: mode,
+                        bestScore: best,
+                        onTap: () => onModeSelected(mode),
+                      )
+                      .animate()
+                      .fadeIn(delay: (i * 80).ms, duration: 350.ms)
+                      .slideX(begin: 0.12, end: 0);
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InfiniteTile extends StatelessWidget {
+  const _InfiniteTile({
+    required this.mode,
+    required this.bestScore,
+    required this.onTap,
+  });
+
+  final InfiniteMode mode;
+  final int bestScore;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = mode.accentColor;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: LinearGradient(
+            colors: [color.withOpacity(0.18), color.withOpacity(0.06)],
+          ),
+          border: Border.all(color: color.withOpacity(0.30), width: 1.2),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: color.withOpacity(0.18),
+                border: Border.all(color: color.withOpacity(0.35)),
+              ),
+              child: Center(
+                child: Text(
+                  mode.icon,
+                  style: TextStyle(
+                    fontSize: 26,
+                    color: color,
+                    shadows: [Shadow(color: color, blurRadius: 12)],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    mode.name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    mode.description,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.55),
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      _Tag(
+                        label:
+                            '${mode.rows}×${mode.cols}  ·  ${mode.runeTypes} runas',
+                        color: color,
+                      ),
+                      const SizedBox(width: 6),
+                      _Tag(label: '∞ movimentos', color: color),
+                      const Spacer(),
+                      if (bestScore > 0)
+                        Text(
+                          'Recorde: $bestScore',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: color,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              Icons.all_inclusive_rounded,
+              color: color.withOpacity(0.6),
+              size: 22,
+            ),
+          ],
         ),
       ),
     );

@@ -88,3 +88,60 @@ const List<Phase> kPhases = [
     runeTypes: 6,
   ),
 ];
+
+// ─── Modo Infinito ──────────────────────────────────────────────────────────
+
+class InfiniteMode {
+  const InfiniteMode({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.accentColor,
+    required this.icon,
+    required this.rows,
+    required this.cols,
+    required this.runeTypes,
+  });
+
+  final int id; // 0 = Fácil, 1 = Médio, 2 = Difícil
+  final String name;
+  final String description;
+  final Color accentColor;
+  final String icon;
+  final int rows;
+  final int cols;
+  final int runeTypes;
+}
+
+const List<InfiniteMode> kInfiniteModes = [
+  InfiniteMode(
+    id: 0,
+    name: 'Fácil',
+    description: 'Grade 6×6, 4 tipos de runas. Relaxe e acumule pontos.',
+    accentColor: Color(0xFF10B981),
+    icon: '✦',
+    rows: 6,
+    cols: 6,
+    runeTypes: 4,
+  ),
+  InfiniteMode(
+    id: 1,
+    name: 'Médio',
+    description: 'Grade 7×7, 5 tipos de runas. O fluxo arcano se intensifica.',
+    accentColor: Color(0xFF06B6D4),
+    icon: '✶',
+    rows: 7,
+    cols: 7,
+    runeTypes: 5,
+  ),
+  InfiniteMode(
+    id: 2,
+    name: 'Difícil',
+    description: 'Grade 8×8, 6 tipos de runas. Apenas os mais sábios resistem.',
+    accentColor: Color(0xFFEF4444),
+    icon: '✷',
+    rows: 8,
+    cols: 8,
+    runeTypes: 6,
+  ),
+];
