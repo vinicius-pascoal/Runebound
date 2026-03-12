@@ -194,46 +194,44 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   // ── Colapso com animação de queda ─────────────────────────────────────────
   Future<void> _collapseWithFallAnimation() async {
-    const double tileSize = 56; // estimativa em pixels por célula
+    const double tileSize = 56;
 
     for (int col = 0; col < _cols; col++) {
-      final survivors = <_RuneCell>[];
+      // Coleta sobreviventes de cima para baixo com a linha de origem.
+      final survivors = <(int, _RuneCell)>[];
       int holes = 0;
-      for (int row = _rows - 1; row >= 0; row--) {
+      for (int row = 0; row < _rows; row++) {
         if (_board[row][col].value != -1) {
-          survivors.add(_board[row][col]);
+          survivors.add((row, _board[row][col]));
         } else {
           holes++;
         }
       }
 
-      // Preenche com novas runas
+      // Nenhum buraco: coluna intacta, nada a fazer.
+      if (holes == 0) continue;
+
+      // Novas runas preenchem as linhas do topo.
       final newCells = List.generate(
         holes,
         (_) => _RuneCell(value: _random.nextInt(_runeTypes), key: UniqueKey()),
       );
+      for (int i = 0; i < holes; i++) {
+        _fallOffset[i][col] = -(tileSize * holes);
+        _board[i][col] = newCells[i];
+      }
 
-      // Monta coluna nova
-      final newCol = [...newCells, ...survivors];
-
-      // Define offsets de queda
-      for (int row = 0; row < _rows; row++) {
-        final cell = newCol[row];
-        final isNew = newCells.contains(cell);
-        if (isNew) {
-          _fallOffset[row][col] = -(tileSize * (holes)).toDouble();
-        } else {
-          // Quantas posições caiu?
-          final oldRow = row - holes;
-          if (oldRow < row) {
-            _fallOffset[row][col] = -(tileSize * (row - oldRow)).toDouble();
-          }
-        }
-        _board[row][col] = cell;
+      // Sobreviventes descem para as linhas abaixo das novas.
+      for (int i = 0; i < survivors.length; i++) {
+        final newRow = holes + i;
+        final (originalRow, cell) = survivors[i];
+        final drop = newRow - originalRow; // > 0 quando a peça cai
+        _fallOffset[newRow][col] = drop > 0 ? -(tileSize * drop) : 0;
+        _board[newRow][col] = cell;
       }
     }
 
-    setState(() {}); // mostra células nas posições deslocadas
+    setState(() {}); // exibe células na posição deslocada
 
     // Anima para posição zero
     await Future.delayed(const Duration(milliseconds: 40));
