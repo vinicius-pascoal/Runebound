@@ -586,10 +586,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           aspectRatio: _cols / _rows,
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final cellW =
-                  (constraints.maxWidth - tileGap * (_cols - 1)) / _cols;
-              final cellH =
-                  (constraints.maxHeight - tileGap * (_rows - 1)) / _rows;
+              // Cada célula tem padding EdgeInsets.all(tileGap/2) em todos os
+              // lados, portanto o espaço total consumido pelos gaps é
+              // tileGap * _cols (e não _cols-1). O cálculo abaixo é correto.
+              final cellW = (constraints.maxWidth - tileGap * _cols) / _cols;
+              final cellH = (constraints.maxHeight - tileGap * _rows) / _rows;
               final cellSize = min(cellW, cellH);
 
               return Column(
