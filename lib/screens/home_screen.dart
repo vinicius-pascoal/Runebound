@@ -653,27 +653,29 @@ class _InfiniteTile extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Row(
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
                     children: [
                       _Tag(
                         label:
                             '${mode.rows}×${mode.cols}  ·  ${mode.runeTypes} runas',
                         color: color,
                       ),
-                      const SizedBox(width: 6),
                       _Tag(label: '∞ movimentos', color: color),
-                      const Spacer(),
-                      if (bestScore > 0)
-                        Text(
-                          'Recorde: $bestScore',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: color,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
                     ],
                   ),
+                  if (bestScore > 0) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Recorde: $bestScore',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: color,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
